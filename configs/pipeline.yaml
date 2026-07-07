@@ -1,0 +1,102 @@
+{
+  "paths": {
+    "raw_data_lake": "data/raw/Data-Lake",
+    "canonical_dir": "data/processed/Data-Lake/canonical",
+    "model_raw_dir": "data/processed/Data-Lake/model_raw",
+    "datalab_parsing_dir": "data/processed/Data-Lake/model_raw/datalab_parsing",
+    "openrouter_asr_cache_dir": "data/processed/Data-Lake/model_raw/openrouter_asr/asr_cache",
+    "openrouter_embeddings_dir": "data/processed/Data-Lake/model_raw/openrouter_embeddings",
+    "openrouter_image_enrichment_dir": "data/processed/Data-Lake/model_raw/openrouter_image_enrichment",
+    "openrouter_table_enrichment_dir": "data/processed/Data-Lake/model_raw/openrouter_table_enrichment",
+    "benchmarks_dir": "data/output/benchmarks",
+    "reports_dir": "data/output/reports",
+    "rerank_cache_dir": "data/output/rerank_cache",
+    "handoff_dir": "data/output/handoff/data_lake_retrieval_bundle"
+  },
+  "lift": {
+    "api_key_env": "DATALAB_API_KEY",
+    "operation": "convert",
+    "mode": "fast",
+    "schema_path": "src/model_clients/schemas/document_components.json",
+    "output_dir": "data/processed/Data-Lake/model_raw/datalab_parsing",
+    "extract_images": true,
+    "save_raw_outputs": true,
+    "timeout": 600,
+    "max_polls": 900,
+    "poll_interval": 1
+  },
+  "canonical": {
+    "data_root": "data/raw/Data-Lake",
+    "output_dir": "data/processed/Data-Lake/canonical",
+    "asr_provider": "openrouter",
+    "asr_cache_dir": "data/processed/Data-Lake/model_raw/openrouter_asr/asr_cache",
+    "extract_pdf_images": false,
+    "extract_pptx_images": true,
+    "datalab_parsing_dir": "data/processed/Data-Lake/model_raw/datalab_parsing",
+    "raw_image_parser": "lift-api",
+    "raw_image_lift_output_dir": "data/processed/Data-Lake/model_raw/datalab_parsing",
+    "raw_image_lift_mode": "balanced",
+    "max_text_chars": 2000000,
+    "max_table_preview_rows": 80
+  },
+  "image_enrichment": {
+    "canonical_dir": "data/processed/Data-Lake/canonical",
+    "data_root": "data/raw/Data-Lake",
+    "output_dir": "data/processed/Data-Lake/model_raw/openrouter_image_enrichment",
+    "model": "google/gemini-2.5-flash-lite",
+    "api_key_env": "OPENROUTER_API_KEY",
+    "limit": null,
+    "only_source_prefix": [
+      "number_image/"
+    ],
+    "min_description_chars": 100
+  },
+  "table_enrichment": {
+    "canonical_dir": "data/processed/Data-Lake/canonical",
+    "output_dir": "data/processed/Data-Lake/model_raw/openrouter_table_enrichment",
+    "model": "google/gemini-2.5-flash-lite",
+    "api_key_env": "OPENROUTER_API_KEY",
+    "limit": null,
+    "only_source_prefix": [],
+    "force": false
+  },
+  "canonical_embeddings": {
+    "canonical_dir": "data/processed/Data-Lake/canonical",
+    "chunks_path": "data/processed/Data-Lake/canonical/chunks.jsonl",
+    "embedding_output_dir": "data/processed/Data-Lake/model_raw/openrouter_embeddings",
+    "model": "openai/text-embedding-3-small",
+    "dimension": 1536,
+    "batch_size": 32,
+    "chunk_size": 1200,
+    "chunk_overlap": 150
+  },
+  "retrieval": {
+    "primary_presets": [
+      "vector_flash",
+      "folder_expand_flash"
+    ],
+    "default_preset": "vector_flash",
+    "questions_path": "data/0.Sample_Data.xlsx",
+    "retrieval_mode": "vector",
+    "vector_records": "data/processed/Data-Lake/model_raw/openrouter_embeddings/vector_records.jsonl",
+    "canonical_dir": "data/processed/Data-Lake/canonical",
+    "chunks_path": "data/processed/Data-Lake/canonical/chunks.jsonl",
+    "vector_chunk_k": 80,
+    "vector_aggregation": "legacy",
+    "rerank_mode": "llm",
+    "rerank_candidate_k": 20,
+    "top_k": 20,
+    "rerank_model": "google/gemini-2.5-flash",
+    "rerank_cache_dir": "data/output/rerank_cache/openrouter_rerank_gemini_2_5_flash",
+    "expand_mentioned_folders": false,
+    "folder_expand_max_files": 80,
+    "no_special_cases": true
+  },
+  "handoff": {
+    "output_dir": "data/output/handoff/data_lake_retrieval_bundle",
+    "include_raw": false
+  },
+  "logging": {
+    "level": "INFO"
+  }
+}

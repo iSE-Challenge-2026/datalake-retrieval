@@ -1,0 +1,10 @@
+name: data-lake-retrieval
+channels:
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - -e .
+      - datalab-python-sdk
+      - openai
