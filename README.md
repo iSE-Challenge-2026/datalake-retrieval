@@ -88,10 +88,11 @@ python -m pip install --upgrade pip
 python -m pip install -e .
 ```
 
-If you want the optional parsers used by the local pipeline, install these too:
+If you want extra dataframe/parquet tooling for your own experiments, install
+these too:
 
 ```bash
-python -m pip install pandas openpyxl pypdf pymupdf python-pptx
+python -m pip install pandas openpyxl pyarrow
 ```
 
 ## Environment
