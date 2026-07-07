@@ -20,7 +20,7 @@ OPENROUTER_TABLE_ENRICHMENT_DIR = MODEL_RAW_DIR / "openrouter_table_enrichment"
 DATALAB_PARSING_DIR = MODEL_RAW_DIR / "datalab_parsing"
 RAW_IMAGE_LIFT_OUTPUT_DIR = DATALAB_PARSING_DIR
 
-OUTPUT_DIR = Path("data/output")
+OUTPUT_DIR = Path("data/output/Data-Lake")
 OUTPUT_BENCHMARKS_DIR = OUTPUT_DIR / "benchmarks"
 OUTPUT_REPORTS_DIR = OUTPUT_DIR / "reports"
 CANONICAL_AUDIT_REPORTS_DIR = OUTPUT_REPORTS_DIR / "audits" / "canonical_quality"

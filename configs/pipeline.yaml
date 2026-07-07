@@ -8,10 +8,10 @@
     "openrouter_embeddings_dir": "data/processed/Data-Lake/model_raw/openrouter_embeddings",
     "openrouter_image_enrichment_dir": "data/processed/Data-Lake/model_raw/openrouter_image_enrichment",
     "openrouter_table_enrichment_dir": "data/processed/Data-Lake/model_raw/openrouter_table_enrichment",
-    "benchmarks_dir": "data/output/benchmarks",
-    "reports_dir": "data/output/reports",
-    "rerank_cache_dir": "data/output/rerank_cache",
-    "handoff_dir": "data/output/handoff/data_lake_retrieval_bundle"
+    "benchmarks_dir": "data/output/Data-Lake/benchmarks",
+    "reports_dir": "data/output/Data-Lake/reports",
+    "rerank_cache_dir": "data/output/Data-Lake/rerank_cache",
+    "handoff_dir": "data/output/Data-Lake/handoff/data_lake_retrieval_bundle"
   },
   "lift": {
     "api_key_env": "DATALAB_API_KEY",
@@ -87,13 +87,13 @@
     "rerank_candidate_k": 20,
     "top_k": 20,
     "rerank_model": "google/gemini-2.5-flash",
-    "rerank_cache_dir": "data/output/rerank_cache/openrouter_rerank_gemini_2_5_flash",
+    "rerank_cache_dir": "data/output/Data-Lake/rerank_cache/openrouter_rerank_gemini_2_5_flash",
     "expand_mentioned_folders": false,
     "folder_expand_max_files": 80,
     "no_special_cases": true
   },
   "handoff": {
-    "output_dir": "data/output/handoff/data_lake_retrieval_bundle",
+    "output_dir": "data/output/Data-Lake/handoff/data_lake_retrieval_bundle",
     "include_raw": false
   },
   "logging": {

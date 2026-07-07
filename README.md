@@ -36,7 +36,7 @@ src/                               Pipeline implementation
 scripts/                           Thin CLI wrappers
 data/raw/Data-Lake/                Raw challenge data lake
 data/processed/Data-Lake/          Reusable processed artifacts
-data/output/                       Retrieval runs, reports, handoff bundles
+data/output/Data-Lake/             Retrieval runs, reports, handoff bundles
 ```
 
 Processed artifacts are stored here:
@@ -53,10 +53,10 @@ data/processed/Data-Lake/model_raw/openrouter_table_enrichment/
 Retrieval/evaluation outputs are stored here:
 
 ```text
-data/output/benchmarks/
-data/output/reports/
-data/output/rerank_cache/
-data/output/handoff/
+data/output/Data-Lake/benchmarks/
+data/output/Data-Lake/reports/
+data/output/Data-Lake/rerank_cache/
+data/output/Data-Lake/handoff/
 ```
 
 ## Install
@@ -168,7 +168,7 @@ Windows PowerShell:
 python scripts/retrieve_eval.py ^
   --questions data/0.Sample_Data.xlsx ^
   --preset vector_flash ^
-  --bench-dir data/output/benchmarks/rerank_variants ^
+  --bench-dir data/output/Data-Lake/benchmarks/rerank_variants ^
   --run-name vector_flash
 ```
 
@@ -178,7 +178,7 @@ macOS/Linux:
 python scripts/retrieve_eval.py \
   --questions data/0.Sample_Data.xlsx \
   --preset vector_flash \
-  --bench-dir data/output/benchmarks/rerank_variants \
+  --bench-dir data/output/Data-Lake/benchmarks/rerank_variants \
   --run-name vector_flash
 ```
 
@@ -190,7 +190,7 @@ Windows PowerShell:
 python scripts/retrieve_eval.py ^
   --questions data/0.Sample_Data.xlsx ^
   --preset folder_expand_flash ^
-  --bench-dir data/output/benchmarks/rerank_variants ^
+  --bench-dir data/output/Data-Lake/benchmarks/rerank_variants ^
   --run-name folder_expand_flash
 ```
 
@@ -200,7 +200,7 @@ macOS/Linux:
 python scripts/retrieve_eval.py \
   --questions data/0.Sample_Data.xlsx \
   --preset folder_expand_flash \
-  --bench-dir data/output/benchmarks/rerank_variants \
+  --bench-dir data/output/Data-Lake/benchmarks/rerank_variants \
   --run-name folder_expand_flash
 ```
 
