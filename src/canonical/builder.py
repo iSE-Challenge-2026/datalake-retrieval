@@ -436,11 +436,8 @@ def _lift_raw_image_records(
     image_files = parsed.get("image_files") if isinstance(parsed.get("image_files"), list) else []
 
     texts: list[CanonicalText] = []
-    images = [raw_image]
+    images: list[CanonicalImage] = []
     if text:
-        raw_image.description = _compact_description(_clean_markdown_for_description(text), limit=3000)
-        raw_image.metadata["description_source"] = "lift-api-raw-image-text"
-        raw_image.metadata["parser"] = "lift-api"
         texts.append(
             CanonicalText(
                 text_id=_stable_id(rel_path, "raw-image-lift-text"),
@@ -457,6 +454,10 @@ def _lift_raw_image_records(
                 },
             )
         )
+    elif not image_files:
+        raw_image.metadata["parser"] = "lift-api"
+        raw_image.metadata["description_source"] = "raw-image-unparsed"
+        images.append(raw_image)
 
     descriptions = _image_descriptions_from_lift_text(text)
     descriptions.extend(_image_descriptions_from_extraction(extraction))
@@ -496,13 +497,14 @@ def _parse_raw_image_with_lift(
     cache_dir = _datalab_cache_dir(config)
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_path = cache_dir / f"{_stable_id(rel_path, _file_hash(path), 'lift-api')}.json"
+    stem_cache_paths = (cache_dir / f"{path.stem}.json", cache_dir / "raw_outputs" / f"{path.stem}.json")
+    for stem_cache_path in stem_cache_paths:
+        if stem_cache_path.exists():
+            payload = _payload_from_lift_output(stem_cache_path, rel_path, suffix)
+            cache_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            return payload
     if cache_path.exists():
         return json.loads(cache_path.read_text(encoding="utf-8"))
-    stem_cache_path = cache_dir / f"{path.stem}.json"
-    if stem_cache_path.exists():
-        payload = _payload_from_lift_output(stem_cache_path, rel_path, suffix)
-        cache_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        return payload
 
     try:
         from src.model_clients.lift import LiftAPIConfig, LiftAPIParserClient, LiftDataObject
@@ -547,6 +549,7 @@ def _datalab_cache_path(path: Path, rel_path: str, config: CanonicalBuildConfig)
     cache_dir = _datalab_cache_dir(config)
     candidates = [
         cache_dir / f"{path.stem}.json",
+        cache_dir / "raw_outputs" / f"{path.stem}.json",
         cache_dir / f"{_stable_id(rel_path, _file_hash(path), 'lift-api')}.json",
     ]
     for candidate in candidates:
@@ -558,7 +561,7 @@ def _datalab_cache_path(path: Path, rel_path: str, config: CanonicalBuildConfig)
 def _payload_from_lift_output(output_path: Path, rel_path: str, suffix: str) -> dict[str, Any]:
     data = json.loads(output_path.read_text(encoding="utf-8"))
     extraction = data.get("extraction") if isinstance(data.get("extraction"), dict) else {}
-    text = str(extraction.get("text") or extraction.get("markdown") or data.get("text") or "").strip()
+    text, text_source = _best_lift_output_text(data, extraction, output_path)
     image_files = _local_lift_image_files(output_path.parent, output_path.stem)
     if not image_files and isinstance(data.get("image_files"), list):
         image_files = data["image_files"]
@@ -574,6 +577,7 @@ def _payload_from_lift_output(output_path: Path, rel_path: str, suffix: str) -> 
             "page_count": data.get("page_count"),
             "latency_seconds": data.get("latency_seconds"),
             "raw_output_path": str(output_path),
+            "text_source": text_source,
             "image_count": len(image_files),
             "image_files": image_files,
             "image_source": data.get("image_source"),
@@ -583,13 +587,104 @@ def _payload_from_lift_output(output_path: Path, rel_path: str, suffix: str) -> 
     }
 
 
+def _best_lift_output_text(data: dict[str, Any], extraction: dict[str, Any], output_path: Path) -> tuple[str, str | None]:
+    candidates: list[tuple[str, str]] = []
+
+    raw_outputs = data.get("raw_lift_outputs") if isinstance(data.get("raw_lift_outputs"), dict) else {}
+    for key in (
+        "extract_markdown",
+        "convert_markdown",
+        "extract_raw_json",
+        "convert_raw_json",
+        "extract_html",
+        "convert_html",
+    ):
+        value = raw_outputs.get(key)
+        if isinstance(value, str):
+            candidates.extend(_lift_text_candidates_from_path(Path(value), f"raw_lift_outputs.{key}"))
+
+    raw_dir = output_path.parent / f"{output_path.stem}_raw_lift"
+    for name in (
+        "extract.md",
+        "convert.md",
+        "extract.raw.json",
+        "convert.raw.json",
+        "extract.html",
+        "convert.html",
+    ):
+        candidates.extend(_lift_text_candidates_from_path(raw_dir / name, f"{raw_dir.name}/{name}"))
+
+    for key in ("markdown", "text", "content"):
+        value = extraction.get(key)
+        if isinstance(value, str):
+            candidates.append((f"extraction.{key}", value))
+
+    for key in ("markdown", "text", "content"):
+        value = data.get(key)
+        if isinstance(value, str):
+            candidates.append((key, value))
+
+    for item_key in ("tables", "figures"):
+        items = extraction.get(item_key)
+        if isinstance(items, list):
+            parts: list[str] = []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                for field in ("content", "markdown", "text", "caption", "description"):
+                    value = item.get(field)
+                    if isinstance(value, str) and value.strip():
+                        parts.append(value.strip())
+            if parts:
+                candidates.append((f"extraction.{item_key}", "\n\n".join(parts)))
+
+    for key in ("main_text", "summary"):
+        value = extraction.get(key)
+        if isinstance(value, str):
+            candidates.append((f"extraction.{key}", value))
+
+    cleaned = [(source, text.strip()) for source, text in candidates if text and text.strip()]
+    if not cleaned:
+        return "", None
+    source, text = max(cleaned, key=lambda item: len(item[1]))
+    return text, source
+
+
+def _lift_text_candidates_from_path(path: Path, source: str) -> list[tuple[str, str]]:
+    if not path.exists():
+        return []
+    try:
+        if path.suffix.lower() == ".json":
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return _lift_text_candidates_from_json(data, source)
+        return [(source, path.read_text(encoding="utf-8"))]
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return []
+
+
+def _lift_text_candidates_from_json(data: Any, source: str) -> list[tuple[str, str]]:
+    if not isinstance(data, dict):
+        return []
+    candidates: list[tuple[str, str]] = []
+    for key in ("markdown", "text", "content", "html"):
+        value = data.get(key)
+        if isinstance(value, str):
+            candidates.append((f"{source}.{key}", value))
+    extraction = data.get("extraction") if isinstance(data.get("extraction"), dict) else {}
+    for key in ("markdown", "text", "content"):
+        value = extraction.get(key)
+        if isinstance(value, str):
+            candidates.append((f"{source}.extraction.{key}", value))
+    return candidates
+
+
 def _local_lift_image_files(root: Path, stem: str) -> list[dict[str, str]]:
     image_dir = root / f"{stem}_images"
     if not image_dir.exists():
         return []
     return [
         {"name": path.name, "path": str(path), "status": "saved"}
-        for path in sorted(image_dir.iterdir())
+        for path in sorted(image_dir.rglob("*"))
         if path.is_file()
     ]
 

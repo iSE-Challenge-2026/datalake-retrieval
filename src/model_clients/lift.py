@@ -123,6 +123,8 @@ class LiftAPIParserClient:
                 "content_type": data_object.content_type,
                 "metadata": metadata,
             },
+            "operation": self.config.operation,
+            "mode": self.config.mode,
             "status": _get_attr(result, "status"),
             "page_count": _get_attr(result, "page_count"),
             "latency_seconds": round(time.monotonic() - started, 3),
@@ -133,7 +135,7 @@ class LiftAPIParserClient:
             "raw_lift_outputs": raw_output_paths,
         }
         output_path = _write_output(self.config.output_dir, file_path, payload)
-        text = _extraction_text(extraction)
+        text = _best_result_text(result, extraction, conversion)
         return LiftParsedResult(
             object_id=data_object.object_id,
             source_uri=data_object.uri,
@@ -183,6 +185,7 @@ def _write_images(output_dir: str | None, file_path: Path, images: dict[str, str
     for index, (name, encoded) in enumerate(images.items(), start=1):
         safe_name = _safe_image_name(name, index, encoded)
         output_path = image_dir / safe_name
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         try:
             output_path.write_bytes(_decode_base64_image(encoded))
         except (binascii.Error, ValueError) as exc:
@@ -304,14 +307,46 @@ def _conversion_extraction(result: Any) -> dict[str, Any]:
     }
 
 
+def _best_result_text(result: Any, extraction: Any, conversion: Any = None) -> str | None:
+    candidates: list[str] = []
+    for value in (
+        _get_attr(result, "markdown"),
+        _get_attr(conversion, "markdown") if conversion is not None else None,
+        _extraction_text(extraction),
+    ):
+        if isinstance(value, str) and value.strip():
+            candidates.append(value.strip())
+    return _best_text(candidates)
+
+
 def _extraction_text(extraction: Any) -> str | None:
     if not isinstance(extraction, dict):
         return None
+    candidates: list[str] = []
+    for item in extraction.get("tables") or []:
+        if isinstance(item, dict):
+            for field in ("content", "text", "markdown", "caption", "description"):
+                value = item.get(field)
+                if isinstance(value, str) and value.strip():
+                    candidates.append(value.strip())
+    for item in extraction.get("figures") or []:
+        if isinstance(item, dict):
+            for field in ("caption", "description", "text", "content"):
+                value = item.get(field)
+                if isinstance(value, str) and value.strip():
+                    candidates.append(value.strip())
     for field in ("main_text", "markdown", "text", "content"):
         value = extraction.get(field)
-        if value:
-            return str(value)
-    return None
+        if isinstance(value, str) and value.strip():
+            candidates.append(value.strip())
+    return _best_text(candidates)
+
+
+def _best_text(candidates: list[str]) -> str | None:
+    cleaned = [value.strip() for value in candidates if value and value.strip()]
+    if not cleaned:
+        return None
+    return max(cleaned, key=len)
 
 
 def _get_attr(obj: Any, name: str, default: Any = None) -> Any:

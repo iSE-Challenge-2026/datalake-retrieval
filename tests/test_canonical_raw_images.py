@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from src.canonical import builder
 from src.canonical.builder import CanonicalBuildConfig
+from src.model_clients.lift import _write_images
 
 
 class CanonicalRawImageTests(unittest.TestCase):
@@ -53,11 +54,24 @@ class CanonicalRawImageTests(unittest.TestCase):
         self.assertEqual(len(texts), 1)
         self.assertEqual(texts[0].role, "raw_image_ocr_text")
         self.assertEqual(texts[0].parser, "lift-api")
-        self.assertEqual(images[0].role, "raw_image")
-        self.assertIn("OCR heading", images[0].description)
-        self.assertEqual(images[1].role, "raw_image_extracted_region")
-        self.assertEqual(images[1].description, "simple chart showing revenue")
-        self.assertEqual(images[1].image_path, "lift_raw_images/raw_outputs/poster_raw_lift/figure.jpg")
+        self.assertEqual(len(images), 1)
+        self.assertEqual(images[0].role, "raw_image_extracted_region")
+        self.assertEqual(images[0].description, "simple chart showing revenue")
+        self.assertEqual(images[0].image_path, "lift_raw_images/raw_outputs/poster_raw_lift/figure.jpg")
+
+    def test_lift_image_writer_creates_nested_parent_dirs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            image_files = _write_images(
+                tmp,
+                Path("poster.png"),
+                {"poster_images/figure.jpg": "ZmFrZSBpbWFnZSBieXRlcw=="},
+            )
+            output_path = Path(image_files[0]["path"])
+            self.assertTrue(output_path.exists())
+            self.assertTrue(output_path.parent.exists())
+
+        self.assertEqual(image_files[0]["status"], "saved")
+        self.assertEqual(Path(image_files[0]["path"]).name, "figure.jpg")
 
     def test_raw_image_parser_defaults_to_lift_api(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

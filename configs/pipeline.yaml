@@ -35,7 +35,7 @@
     "datalab_parsing_dir": "data/processed/Data-Lake/model_raw/datalab_parsing",
     "raw_image_parser": "lift-api",
     "raw_image_lift_output_dir": "data/processed/Data-Lake/model_raw/datalab_parsing",
-    "raw_image_lift_mode": "balanced",
+    "raw_image_lift_mode": "fast",
     "max_text_chars": 2000000,
     "max_table_preview_rows": 80
   },

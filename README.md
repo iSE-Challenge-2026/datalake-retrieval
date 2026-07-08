@@ -84,6 +84,18 @@ Benchmark output is written to:
 data/output/Data-Lake/benchmarks/
 ```
 
+7. Export retrieved source files for downstream QA/reasoning.
+
+```bash
+python scripts/run_solution.py --questions data/0.Sample_Data.xlsx --preset vector_flash
+```
+
+The default output is:
+
+```text
+data/output/Data-Lake/retrieval_source_paths.json
+```
+
 ## What The Pipeline Produces
 
 Reusable processed artifacts are written under `data/processed/Data-Lake`:
@@ -165,6 +177,30 @@ Run high-recall folder expansion:
 python scripts/retrieve_eval.py --questions data/0.Sample_Data.xlsx --preset folder_expand_flash --run-name folder_expand_flash
 ```
 
+Export source paths for every question:
+
+```bash
+python scripts/run_solution.py --questions data/0.Sample_Data.xlsx --preset vector_flash
+```
+
+Export the folder-expansion variant:
+
+```bash
+python scripts/run_solution.py --questions data/0.Sample_Data.xlsx --preset folder_expand_flash --output data/output/Data-Lake/retrieval_source_paths_folder_expand.json
+```
+
+If you need a CSV instead of JSON:
+
+```bash
+python scripts/run_solution.py --questions data/0.Sample_Data.xlsx --preset vector_flash --output-format csv --output data/output/Data-Lake/retrieval_source_paths.csv
+```
+
+If processed artifacts do not exist yet, run ingestion/indexing first:
+
+```bash
+python scripts/run_solution.py --questions data/0.Sample_Data.xlsx --preset vector_flash --build-first
+```
+
 Export a compact bundle for another repo:
 
 ```bash
@@ -207,6 +243,9 @@ no_special_cases = true
 - If someone gives you a processed artifact bundle, place it under
   `data/processed/Data-Lake/` and you can run retrieval without rebuilding the
   full ingestion pipeline.
+- `scripts/run_solution.py` is the handoff entrypoint for other teams. It reads a
+  question file, runs the configured retrieval preset, and writes local absolute
+  source file paths for each question.
 - If `chunks.jsonl` changes, rerun embeddings:
 
 ```bash
