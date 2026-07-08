@@ -211,6 +211,41 @@ summary.json
 results.json
 ```
 
+## End-To-End Source Path Export
+
+Run retrieval for every question and export local absolute paths to the
+predicted source files:
+
+```powershell
+python scripts/run_solution.py ^
+  --questions data/0.Sample_Data.xlsx ^
+  --output data/output/retrieval_source_paths.json
+```
+
+To rebuild canonical artifacts and embeddings first, add `--build-first`:
+
+```powershell
+python scripts/run_solution.py ^
+  --build-first ^
+  --questions data/0.Sample_Data.xlsx ^
+  --output data/output/retrieval_source_paths.json
+```
+
+The default preset is `vector_flash`. Output rows include:
+
+```json
+{
+  "id": "1",
+  "question": "...",
+  "source_files": [
+    "D:\\datalake-retrieval\\data\\raw\\Data-Lake\\..."
+  ]
+}
+```
+
+Absolute paths are resolved from the local `data_root`, so the same command on
+another machine writes paths for that machine's checkout location.
+
 ## Handoff To QA Repo
 
 For another QA repo, the most useful files are:
