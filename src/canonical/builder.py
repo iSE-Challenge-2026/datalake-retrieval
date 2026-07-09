@@ -16,6 +16,7 @@ import mimetypes
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import tempfile
 import urllib.error
@@ -307,19 +308,29 @@ def _doc_file_records(
     config: CanonicalBuildConfig,
     extracted_image_dir: Path,
 ) -> tuple[list[CanonicalText], list[CanonicalImage]]:
+    if suffix == ".pdf":
+        datalab_records = _datalab_doc_file_records(path, rel_path, suffix, config)
+        if datalab_records is not None:
+            return datalab_records
+
+        text, parser = _pdf_text(path)
+        images = _pdf_image_records(path, rel_path, suffix, config, extracted_image_dir) if config.extract_pdf_images else []
+        return _doc_text_records(path, rel_path, suffix, text, parser), images
+
     datalab_records = _datalab_doc_file_records(path, rel_path, suffix, config)
     if datalab_records is not None:
         return datalab_records
 
-    if suffix == ".pdf":
-        text, parser = _pdf_text(path)
-        images = _pdf_image_records(path, rel_path, suffix, config, extracted_image_dir) if config.extract_pdf_images else []
-    elif suffix == ".pptx":
+    if suffix == ".pptx":
         text, parser = _pptx_text(path)
         images = _pptx_image_records(path, rel_path, suffix, config, extracted_image_dir) if config.extract_pptx_images else []
     else:
         text, parser, images = _legacy_ppt_records(path, rel_path, config, extracted_image_dir)
 
+    return _doc_text_records(path, rel_path, suffix, text, parser), images
+
+
+def _doc_text_records(path: Path, rel_path: str, suffix: str, text: str, parser: str) -> list[CanonicalText]:
     texts = [
         CanonicalText(
             text_id=_stable_id(rel_path, "doc-text"),
@@ -331,7 +342,7 @@ def _doc_file_records(
             metadata=_file_metadata(path),
         )
     ]
-    return texts, images
+    return texts
 
 
 def _datalab_doc_file_records(
@@ -497,14 +508,22 @@ def _parse_raw_image_with_lift(
     cache_dir = _datalab_cache_dir(config)
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_path = cache_dir / f"{_stable_id(rel_path, _file_hash(path), 'lift-api')}.json"
-    stem_cache_paths = (cache_dir / f"{path.stem}.json", cache_dir / "raw_outputs" / f"{path.stem}.json")
+    output_stem = _lift_output_stem(rel_path, path.name)
+    use_legacy_stem_cache = not _has_stem_collision(path)
+    stem_cache_paths = (
+        cache_dir / f"{output_stem}.json",
+        cache_dir / "raw_outputs" / f"{output_stem}.json",
+        *((cache_dir / f"{path.stem}.json", cache_dir / "raw_outputs" / f"{path.stem}.json") if use_legacy_stem_cache else ()),
+    )
     for stem_cache_path in stem_cache_paths:
         if stem_cache_path.exists():
             payload = _payload_from_lift_output(stem_cache_path, rel_path, suffix)
             cache_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
             return payload
     if cache_path.exists():
-        return json.loads(cache_path.read_text(encoding="utf-8"))
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+        if use_legacy_stem_cache or _payload_uses_output_stem(payload, output_stem):
+            return payload
 
     try:
         from src.model_clients.lift import LiftAPIConfig, LiftAPIParserClient, LiftDataObject
@@ -547,7 +566,10 @@ def _datalab_cache_dir(config: CanonicalBuildConfig) -> Path:
 
 def _datalab_cache_path(path: Path, rel_path: str, config: CanonicalBuildConfig) -> Path | None:
     cache_dir = _datalab_cache_dir(config)
+    output_stem = _lift_output_stem(rel_path, path.name)
     candidates = [
+        cache_dir / f"{output_stem}.json",
+        cache_dir / "raw_outputs" / f"{output_stem}.json",
         cache_dir / f"{path.stem}.json",
         cache_dir / "raw_outputs" / f"{path.stem}.json",
         cache_dir / f"{_stable_id(rel_path, _file_hash(path), 'lift-api')}.json",
@@ -689,6 +711,38 @@ def _local_lift_image_files(root: Path, stem: str) -> list[dict[str, str]]:
     ]
 
 
+def _lift_output_stem(rel_path: str, file_name: str) -> str:
+    key = rel_path.replace("\\", "/") or file_name
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:10]
+    readable = re.sub(r"[^A-Za-z0-9_.-]+", "__", key).strip("._-")
+    if not readable:
+        readable = Path(file_name).stem
+    return f"{readable[:80]}__{digest}"
+
+
+def _has_stem_collision(path: Path) -> bool:
+    try:
+        matches = [
+            candidate
+            for candidate in path.parent.glob(f"{path.stem}.*")
+            if candidate.is_file() and candidate.suffix.lower() in IMAGE_EXTENSIONS
+        ]
+    except OSError:
+        return False
+    return len(matches) > 1
+
+
+def _payload_uses_output_stem(payload: dict[str, Any], output_stem: str) -> bool:
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    candidates = [metadata.get("raw_output_path")]
+    raw_outputs = metadata.get("raw_lift_outputs") if isinstance(metadata.get("raw_lift_outputs"), dict) else {}
+    candidates.extend(raw_outputs.values())
+    for image_file in payload.get("image_files") or []:
+        if isinstance(image_file, dict):
+            candidates.append(image_file.get("path"))
+    return any(output_stem in str(value or "") for value in candidates)
+
+
 def _image_file_path_value(image_file: Any) -> str:
     if isinstance(image_file, dict):
         return str(image_file.get("path") or image_file.get("image_path") or image_file.get("name") or "").strip()
@@ -756,6 +810,12 @@ def _table_records(path: Path, rel_path: str, suffix: str, config: CanonicalBuil
             )
             records.append(_table_record_from_profile(path, rel_path, suffix, profile, sheet_name=sheet_name))
         return records or [_table_record_from_profile(path, rel_path, suffix, _table_profile(path, rel_path, suffix, config))]
+    if suffix == ".sql":
+        records = [
+            _table_record_from_profile(path, rel_path, suffix, profile, sheet_name=table_name, locator_label="table")
+            for table_name, profile in _sql_table_profiles(path, rel_path, suffix, config)
+        ]
+        return records or [_table_record_from_profile(path, rel_path, suffix, _table_profile(path, rel_path, suffix, config))]
     return [_table_record_from_profile(path, rel_path, suffix, _table_profile(path, rel_path, suffix, config))]
 
 
@@ -765,9 +825,10 @@ def _table_record_from_profile(
     suffix: str,
     profile: dict[str, Any],
     sheet_name: str | None = None,
+    locator_label: str = "sheet",
 ) -> CanonicalTable:
-    table_path = f"{rel_path}#sheet={sheet_name}" if sheet_name else rel_path
-    locator = f"sheet={sheet_name}" if sheet_name else "file"
+    table_path = f"{rel_path}#{locator_label}={sheet_name}" if sheet_name else rel_path
+    locator = f"{locator_label}={sheet_name}" if sheet_name else "file"
     return CanonicalTable(
         table_id=_stable_id(table_path, "table"),
         source_path=rel_path,
@@ -1084,10 +1145,13 @@ def _pdf_image_records(
     try:
         import fitz  # type: ignore
     except ImportError:
-        return []
+        return _pdf_image_records_pypdf(path, rel_path, suffix, config, extracted_image_dir)
 
     records: list[CanonicalImage] = []
-    doc = fitz.open(str(path))
+    try:
+        doc = fitz.open(str(path))
+    except Exception:
+        return _pdf_image_records_pypdf(path, rel_path, suffix, config, extracted_image_dir)
     try:
         for page_index in range(len(doc)):
             page = doc[page_index]
@@ -1123,6 +1187,72 @@ def _pdf_image_records(
         return records
     finally:
         doc.close()
+
+
+def _pdf_image_records_pypdf(
+    path: Path,
+    rel_path: str,
+    suffix: str,
+    config: CanonicalBuildConfig,
+    extracted_image_dir: Path,
+) -> list[CanonicalImage]:
+    try:
+        from pypdf import PdfReader  # type: ignore
+    except Exception:
+        return []
+
+    try:
+        reader = PdfReader(str(path))
+    except Exception:
+        return []
+
+    records: list[CanonicalImage] = []
+    for page_index, page in enumerate(reader.pages):
+        try:
+            page_images = list(getattr(page, "images", []) or [])
+        except Exception:
+            continue
+        for image_index, image in enumerate(page_images):
+            image_bytes = getattr(image, "data", b"") or b""
+            image_name = str(getattr(image, "name", "") or "")
+            image_suffix = Path(image_name).suffix.lower()
+            if not image_suffix:
+                pil_image = getattr(image, "image", None)
+                image_format = str(getattr(pil_image, "format", "") or "").lower()
+                image_suffix = f".{image_format}" if image_format else ".bin"
+            image_id = _stable_id(
+                rel_path,
+                "pdf-image",
+                page_index + 1,
+                image_index,
+                hashlib.sha1(image_bytes or image_name.encode("utf-8")).hexdigest(),
+            )
+            image_path = rel_path
+            metadata = {
+                "page": page_index + 1,
+                "name": image_name,
+                "embedded_size": len(image_bytes),
+                "image_parser": "pdf-pypdf",
+                **_file_metadata(path),
+            }
+            if config.copy_extracted_images and image_bytes and image_suffix in IMAGE_EXTENSIONS:
+                target = extracted_image_dir / f"{image_id}{image_suffix}"
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(image_bytes)
+                image_path = target.relative_to(config.output_dir).as_posix()
+                metadata["materialized"] = True
+            records.append(
+                CanonicalImage(
+                    image_id=image_id,
+                    source_path=rel_path,
+                    source_extension=suffix,
+                    image_path=image_path,
+                    role="document_embedded_image",
+                    locator=f"page={page_index + 1};image={image_index}",
+                    metadata=metadata,
+                )
+            )
+    return records
 
 
 def _table_profile(path: Path, rel_path: str, suffix: str, config: CanonicalBuildConfig) -> dict[str, Any]:
@@ -1276,6 +1406,99 @@ def _profile_sheets(rel_path: str, suffix: str, sheets: list[dict[str, Any]], pa
         "metadata_text": "\n".join(metadata_parts),
         "table_shape": {"sheets": sheet_summaries, "sheet_count": len(sheets)},
     }
+
+
+def _sql_table_profiles(path: Path, rel_path: str, suffix: str, config: CanonicalBuildConfig) -> list[tuple[str, dict[str, Any]]]:
+    text = _read_text(path, config.max_text_chars)
+    try:
+        connection = sqlite3.connect(":memory:")
+        connection.executescript(text)
+        table_names = [
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+            ).fetchall()
+        ]
+        profiles: list[tuple[str, dict[str, Any]]] = []
+        for table_name in table_names:
+            profile = _sqlite_table_profile(connection, rel_path, suffix, text, table_name, config.max_table_preview_rows)
+            profiles.append((table_name, profile))
+        return profiles
+    except sqlite3.Error:
+        return []
+    finally:
+        try:
+            connection.close()
+        except Exception:
+            pass
+
+
+def _sqlite_table_profile(
+    connection: sqlite3.Connection,
+    rel_path: str,
+    suffix: str,
+    sql_text: str,
+    table_name: str,
+    max_rows: int,
+) -> dict[str, Any]:
+    quoted_table = _quote_sqlite_identifier(table_name)
+    pragma_rows = connection.execute(f"PRAGMA table_info({quoted_table})").fetchall()
+    columns = [str(row[1]) for row in pragma_rows]
+    count = int(connection.execute(f"SELECT COUNT(*) FROM {quoted_table}").fetchone()[0])
+    first_rows = connection.execute(f"SELECT * FROM {quoted_table} LIMIT ?", (min(5, max_rows),)).fetchall()
+    tail_offset = max(count - min(5, max_rows), 0)
+    tail_rows = connection.execute(f"SELECT * FROM {quoted_table} LIMIT ? OFFSET ?", (min(5, max_rows), tail_offset)).fetchall()
+    sample_rows = [_sqlite_row_to_dict(columns, row) for row in first_rows]
+    tail_sample_rows = [_sqlite_row_to_dict(columns, row) for row in tail_rows]
+    preview_rows = connection.execute(f"SELECT * FROM {quoted_table} LIMIT ?", (max_rows,)).fetchall()
+    preview_text = _sqlite_preview_text(table_name, columns, preview_rows)
+    metadata_text = (
+        f"SQL script executed successfully in SQLite memory. "
+        f"Extracted table `{table_name}` from source `{rel_path}`."
+    )
+    table_shape = {
+        "kind": "sql_executed_table",
+        "table_name": table_name,
+        "row_count": count,
+        "column_count": len(columns),
+        "statement_count": len([part for part in sql_text.split(";") if part.strip()]),
+    }
+    description = _table_description(
+        rel_path=f"{rel_path}#table={table_name}",
+        suffix=suffix,
+        parser="sql-executed-table",
+        columns=columns,
+        sample_rows=sample_rows,
+        tail_sample_rows=tail_sample_rows,
+        metadata_text=metadata_text,
+        table_shape=table_shape,
+    )
+    return {
+        "parser": "sql-executed-table",
+        "preview_text": preview_text,
+        "description": description,
+        "columns": columns,
+        "sample_rows": sample_rows,
+        "tail_sample_rows": tail_sample_rows,
+        "llm_description": "",
+        "metadata_text": metadata_text,
+        "table_shape": table_shape,
+    }
+
+
+def _quote_sqlite_identifier(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _sqlite_row_to_dict(columns: list[str], row: Any) -> dict[str, str]:
+    return {column: "" if value is None else str(value) for column, value in zip(columns, row)}
+
+
+def _sqlite_preview_text(table_name: str, columns: list[str], rows: list[Any]) -> str:
+    parts = [f"SQL table {table_name}", "\t".join(columns)]
+    for row in rows:
+        parts.append("\t".join("" if value is None else str(value) for value in row))
+    return "\n".join(parts)
 
 
 def _profile_rows(rel_path: str, suffix: str, rows: list[list[str]], parser: str) -> dict[str, Any]:

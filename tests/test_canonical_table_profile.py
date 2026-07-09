@@ -59,6 +59,30 @@ class CanonicalTableProfileTests(unittest.TestCase):
         self.assertEqual(records[1].tail_sample_rows[-1]["order_id"], "o1")
         self.assertIn("book.xlsx#sheet=Orders", records[1].description)
 
+    def test_sql_profile_executes_script_and_extracts_table_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "grades.sql"
+            path.write_text(
+                "CREATE TABLE class_scores (student_id INTEGER, class_name TEXT, math_score REAL);\n"
+                "INSERT INTO class_scores VALUES (1, '10A1', 8.0);\n"
+                "INSERT INTO class_scores VALUES (2, '10A1', 6.5);\n",
+                encoding="utf-8",
+            )
+            config = CanonicalBuildConfig(data_root=root, output_dir=root / "out")
+
+            records = builder._table_records(path, "grades.sql", ".sql", config)
+
+        self.assertEqual(len(records), 1)
+        table = records[0]
+        self.assertEqual(table.parser, "sql-executed-table")
+        self.assertEqual(table.table_path, "grades.sql#table=class_scores")
+        self.assertEqual(table.locator, "table=class_scores")
+        self.assertEqual(table.columns, ["student_id", "class_name", "math_score"])
+        self.assertEqual(table.sample_rows[0]["math_score"], "8.0")
+        self.assertEqual(table.table_shape["row_count"], 2)
+        self.assertIn("First sample rows", table.description)
+
     def test_legacy_ppt_uses_converted_pptx_parser_when_available(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -83,6 +107,39 @@ class CanonicalTableProfileTests(unittest.TestCase):
         self.assertEqual(images, [])
         self.assertEqual(texts[0].text, "Slide 1: Real text")
         self.assertEqual(texts[0].parser, "ppt-converted-test-converter+pptx-ooxml")
+
+    def test_pdf_prefers_datalab_cache_before_native_text(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pdf_path = root / "native.pdf"
+            pdf_path.write_bytes(b"%PDF placeholder")
+            config = CanonicalBuildConfig(
+                data_root=root,
+                output_dir=root / "out",
+                extract_pdf_images=True,
+            )
+            datalab_text = builder.CanonicalText(
+                text_id="cached",
+                source_path="native.pdf",
+                source_extension=".pdf",
+                text="Datalab markdown text with figure descriptions",
+                role="document_text",
+                parser="datalab-parsing-cache",
+            )
+
+            with (
+                patch.object(builder, "_datalab_doc_file_records", return_value=([datalab_text], [])) as datalab_records,
+                patch.object(builder, "_pdf_text") as pdf_text,
+                patch.object(builder, "_pdf_image_records") as pdf_images,
+            ):
+                texts, images = builder._doc_file_records(pdf_path, "native.pdf", ".pdf", config, root / "out" / "extracted_images")
+
+        self.assertEqual(images, [])
+        self.assertEqual(texts[0].text, "Datalab markdown text with figure descriptions")
+        self.assertEqual(texts[0].parser, "datalab-parsing-cache")
+        datalab_records.assert_called_once()
+        pdf_text.assert_not_called()
+        pdf_images.assert_not_called()
 
 
 def _read_jsonl(path: Path) -> list[dict]:

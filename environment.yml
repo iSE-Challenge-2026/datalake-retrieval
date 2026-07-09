@@ -8,3 +8,5 @@ dependencies:
       - -e .
       - datalab-python-sdk
       - openai
+      - pymupdf
+      - pypdf

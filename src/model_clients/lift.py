@@ -7,8 +7,10 @@ from pathlib import Path
 from typing import Any
 import base64
 import binascii
+import hashlib
 import json
 import os
+import re
 import time
 
 SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".gif"}
@@ -73,6 +75,7 @@ class LiftAPIParserClient:
 
         schema = _load_schema(self.config.schema_path)
         client = DatalabClient(timeout=self.config.timeout)
+        output_stem = _output_stem(file_path, data_object)
 
         started = time.monotonic()
         conversion = None
@@ -107,13 +110,14 @@ class LiftAPIParserClient:
                 images = _normalize_images(_get_attr(conversion, "images", {}))
                 image_source = "convert"
 
-        image_files = _write_images(self.config.output_dir, file_path, images)
+        image_files = _write_images(self.config.output_dir, file_path, images, output_stem=output_stem)
         raw_output_paths = _write_lift_raw_outputs(
             self.config.output_dir,
             file_path,
             extract_result=result,
             convert_result=conversion,
             enabled=self.config.save_raw_outputs,
+            output_stem=output_stem,
         )
         payload = {
             "input": {
@@ -134,7 +138,7 @@ class LiftAPIParserClient:
             "image_source": image_source,
             "raw_lift_outputs": raw_output_paths,
         }
-        output_path = _write_output(self.config.output_dir, file_path, payload)
+        output_path = _write_output(self.config.output_dir, file_path, payload, output_stem=output_stem)
         text = _best_result_text(result, extraction, conversion)
         return LiftParsedResult(
             object_id=data_object.object_id,
@@ -166,20 +170,25 @@ def _load_schema(schema_path: str | None) -> dict[str, Any]:
     return schema
 
 
-def _write_output(output_dir: str | None, file_path: Path, payload: dict[str, Any]) -> Path | None:
+def _write_output(output_dir: str | None, file_path: Path, payload: dict[str, Any], output_stem: str | None = None) -> Path | None:
     if not output_dir:
         return None
     root = Path(output_dir)
     root.mkdir(parents=True, exist_ok=True)
-    output_path = root / f"{file_path.stem}.json"
+    output_path = root / f"{output_stem or file_path.stem}.json"
     output_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     return output_path
 
 
-def _write_images(output_dir: str | None, file_path: Path, images: dict[str, str]) -> list[dict[str, str]]:
+def _write_images(
+    output_dir: str | None,
+    file_path: Path,
+    images: dict[str, str],
+    output_stem: str | None = None,
+) -> list[dict[str, str]]:
     if not output_dir or not images:
         return []
-    image_dir = Path(output_dir) / f"{file_path.stem}_images"
+    image_dir = Path(output_dir) / f"{output_stem or file_path.stem}_images"
     image_dir.mkdir(parents=True, exist_ok=True)
     image_files: list[dict[str, str]] = []
     for index, (name, encoded) in enumerate(images.items(), start=1):
@@ -202,10 +211,11 @@ def _write_lift_raw_outputs(
     extract_result: Any,
     convert_result: Any = None,
     enabled: bool = True,
+    output_stem: str | None = None,
 ) -> dict[str, str]:
     if not output_dir or not enabled:
         return {}
-    raw_dir = Path(output_dir) / f"{file_path.stem}_raw_lift"
+    raw_dir = Path(output_dir) / f"{output_stem or file_path.stem}_raw_lift"
     raw_dir.mkdir(parents=True, exist_ok=True)
     paths: dict[str, str] = {}
     paths.update(_write_result_artifacts(raw_dir, "extract", extract_result))
@@ -266,6 +276,16 @@ def _safe_image_name(name: str, index: int, encoded: str) -> str:
     suffix = _image_suffix_from_data_uri(encoded) or ".png"
     stem = Path(path_name).stem if path_name else f"image_{index:03d}"
     return f"{stem}{suffix}"
+
+
+def _output_stem(file_path: Path, data_object: LiftDataObject) -> str:
+    metadata = data_object.metadata or {}
+    key = str(metadata.get("source_path") or data_object.uri or file_path.name)
+    digest = hashlib.sha256(key.replace("\\", "/").encode("utf-8")).hexdigest()[:10]
+    readable = re.sub(r"[^A-Za-z0-9_.-]+", "__", key.replace("\\", "/")).strip("._-")
+    if not readable:
+        readable = file_path.stem
+    return f"{readable[:80]}__{digest}"
 
 
 def _image_suffix_from_data_uri(encoded: str) -> str | None:

@@ -30,7 +30,7 @@
     "output_dir": "data/processed/Data-Lake/canonical",
     "asr_provider": "openrouter",
     "asr_cache_dir": "data/processed/Data-Lake/model_raw/openrouter_asr/asr_cache",
-    "extract_pdf_images": false,
+    "extract_pdf_images": true,
     "extract_pptx_images": true,
     "datalab_parsing_dir": "data/processed/Data-Lake/model_raw/datalab_parsing",
     "raw_image_parser": "lift-api",
@@ -46,9 +46,7 @@
     "model": "google/gemini-2.5-flash-lite",
     "api_key_env": "OPENROUTER_API_KEY",
     "limit": null,
-    "only_source_prefix": [
-      "number_image/"
-    ],
+    "only_source_prefix": [],
     "min_description_chars": 100
   },
   "table_enrichment": {

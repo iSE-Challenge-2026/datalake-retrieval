@@ -15,6 +15,7 @@ data/processed/
 data/cleaned/*
 data/enriched/
 data/output/*
+data-*/
 
 !data/raw/.gitkeep
 !data/raw/final_test/

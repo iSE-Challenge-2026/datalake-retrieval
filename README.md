@@ -146,6 +146,16 @@ Run everything:
 python scripts/run_pipeline.py
 ```
 
+The default full pipeline order is:
+
+```text
+canonical -> image_enrichment -> table_enrichment -> embeddings -> audit
+```
+
+Do not skip `table_enrichment` before rebuilding embeddings if you want table
+retrieval quality to match the benchmarked setup. The SQL/table descriptions are
+merged into `tables.jsonl` and then embedded.
+
 Run only specific stages:
 
 ```bash
@@ -233,6 +243,19 @@ rerank_model = google/gemini-2.5-flash
 expand_mentioned_folders = false
 no_special_cases = true
 ```
+
+Important parsing defaults:
+
+```text
+global Datalab/Lift operation = convert
+global Datalab/Lift mode = fast
+raw image Lift operation = extract
+raw image Lift mode = fast
+```
+
+Document files such as PDF/PPT/PPTX use existing Datalab parsing artifacts when
+available. Raw images are parsed through Lift extract, then image descriptions
+can be enriched by OpenRouter.
 
 `.env` contains API keys and model fallbacks. Presets in
 `configs/pipeline.yaml` take priority for benchmark runs.
