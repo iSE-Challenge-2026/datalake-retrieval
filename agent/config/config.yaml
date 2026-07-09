@@ -1,0 +1,10 @@
+provider: "google"
+model_name: "gemini-2.5-flash"
+interactive: false
+max_refinement_rounds: 3
+preserve_artifacts: true
+enable_direct_route: true
+direct_context_char_limit: 100000
+direct_file_char_limit: 20000
+direct_attachment_limit: 20
+direct_attachment_max_bytes: 20000000

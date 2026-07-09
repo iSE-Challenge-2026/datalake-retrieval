@@ -27,3 +27,7 @@ data-*/
 !storage/schema/.gitkeep
 !storage/vector_db/.gitkeep
 !storage/db/.gitkeep
+
+
+.vscode/
+runs/
