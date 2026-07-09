@@ -6,13 +6,11 @@ from pathlib import Path
 import argparse
 import json
 import sys
-import time
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.canonical.audit import main as audit_main  # noqa: E402
 from src.canonical.image_enrichment import main as image_enrichment_main  # noqa: E402
 from src.canonical.table_enrichment import main as table_enrichment_main  # noqa: E402
 from src.cli.build_canonical_artifacts import main as canonical_main  # noqa: E402
@@ -20,7 +18,7 @@ from src.cli.build_canonical_embeddings import main as embeddings_main  # noqa: 
 from src.utils.env import load_dotenv_file  # noqa: E402
 
 
-DEFAULT_STAGES = ("canonical", "image_enrichment", "table_enrichment", "embeddings", "audit")
+DEFAULT_STAGES = ("canonical", "image_enrichment", "table_enrichment", "embeddings")
 STAGE_ALIASES = {
     "ingestion": "canonical",
     "normalize": "canonical",
@@ -45,10 +43,8 @@ def main(argv: list[str] | None = None) -> None:
     stages = _parse_stages(args.stages)
     if args.skip_enrichment:
         stages = [stage for stage in stages if stage not in {"image_enrichment", "table_enrichment"}]
-    if args.skip_audit:
-        stages = [stage for stage in stages if stage != "audit"]
 
-    commands = _stage_commands(stages, config_path, args.audit_run_name)
+    commands = _stage_commands(stages, config_path)
     if args.dry_run:
         print(json.dumps({"config": config_path.as_posix(), "stages": stages, "commands": commands}, ensure_ascii=False, indent=2))
         return
@@ -58,7 +54,7 @@ def main(argv: list[str] | None = None) -> None:
     for stage in stages:
         stage_started = time.time()
         print(json.dumps({"stage": stage, "status": "started"}, ensure_ascii=False))
-        _run_stage(stage, config_path, args.audit_run_name)
+        _run_stage(stage, config_path)
         completed.append({"stage": stage, "seconds": round(time.time() - stage_started, 3)})
         print(json.dumps({"stage": stage, "status": "completed", "seconds": completed[-1]["seconds"]}, ensure_ascii=False))
 
@@ -82,11 +78,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--stages",
         default=",".join(DEFAULT_STAGES),
-        help="Comma-separated stages: canonical,image_enrichment,table_enrichment,embeddings,audit.",
+        help="Comma-separated stages: canonical,image_enrichment,table_enrichment,embeddings.",
     )
     parser.add_argument("--skip-enrichment", action="store_true", help="Run canonical and embeddings without image/table LLM enrichment.")
-    parser.add_argument("--skip-audit", action="store_true")
-    parser.add_argument("--audit-run-name", default=None)
     parser.add_argument("--dry-run", action="store_true")
     return parser
 
@@ -103,15 +97,15 @@ def _parse_stages(value: str) -> list[str]:
     return stages
 
 
-def _stage_commands(stages: list[str], config_path: Path, audit_run_name: str | None) -> list[dict]:
+def _stage_commands(stages: list[str], config_path: Path) -> list[dict]:
     commands = []
     for stage in stages:
-        commands.append({"stage": stage, "argv": _stage_argv(stage, config_path, audit_run_name)})
+        commands.append({"stage": stage, "argv": _stage_argv(stage, config_path)})
     return commands
 
 
-def _run_stage(stage: str, config_path: Path, audit_run_name: str | None) -> None:
-    argv = _stage_argv(stage, config_path, audit_run_name)
+def _run_stage(stage: str, config_path: Path) -> None:
+    argv = _stage_argv(stage, config_path)
     if stage == "canonical":
         canonical_main(argv)
     elif stage == "image_enrichment":
@@ -120,18 +114,13 @@ def _run_stage(stage: str, config_path: Path, audit_run_name: str | None) -> Non
         table_enrichment_main(argv)
     elif stage == "embeddings":
         embeddings_main(argv)
-    elif stage == "audit":
-        audit_main(argv)
     else:
         raise ValueError(f"Unsupported pipeline stage: {stage}")
 
 
-def _stage_argv(stage: str, config_path: Path, audit_run_name: str | None) -> list[str]:
+def _stage_argv(stage: str, config_path: Path) -> list[str]:
     if stage in {"canonical", "image_enrichment", "table_enrichment", "embeddings"}:
         return ["--config", config_path.as_posix()]
-    if stage == "audit":
-        run_name = audit_run_name or time.strftime("run_pipeline_%Y%m%d-%H%M%S")
-        return ["--run-name", run_name]
     raise ValueError(f"Unsupported pipeline stage: {stage}")
 
 

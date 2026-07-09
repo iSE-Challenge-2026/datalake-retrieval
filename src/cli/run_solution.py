@@ -64,11 +64,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--pipeline-config", type=Path, default=Path("configs/pipeline.yaml"))
     parser.add_argument(
         "--pipeline-stages",
-        default="canonical,image_enrichment,table_enrichment,embeddings,audit",
+        default="canonical,image_enrichment,table_enrichment,embeddings",
         help="Comma-separated pipeline stages to run when --build-first is set.",
     )
     parser.add_argument("--skip-enrichment", action="store_true", help="Forwarded to the build pipeline.")
-    parser.add_argument("--skip-audit", action="store_true", help="Forwarded to the build pipeline.")
     parser.add_argument("--preset", choices=sorted(PRESETS), default="vector_flash")
     parser.add_argument("--data-root", type=Path)
     parser.add_argument("--canonical-dir", type=Path)
@@ -147,8 +146,6 @@ def _run_build_pipeline(args: argparse.Namespace) -> None:
     ]
     if args.skip_enrichment:
         argv.append("--skip-enrichment")
-    if args.skip_audit:
-        argv.append("--skip-audit")
     run_pipeline_main(argv)
 
 
